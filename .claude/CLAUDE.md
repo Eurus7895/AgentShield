@@ -392,6 +392,24 @@ Policy hot-reload: daemon watches policy.yaml, reloads on change (debounced 500m
 
 ---
 
+## Threat Severity Levels
+
+| Level | Label | Description | Example |
+|-------|-------|-------------|---------|
+| 0 | Info | Normal operations, no risk | Read project files, list directories |
+| 1 | Low | Minor deviation, cosmetic or non-impactful | Write to temp files, read non-sensitive configs |
+| 2 | Medium | Potentially unwanted but recoverable | Delete non-critical files, modify project configs |
+| 3 | High | Significant damage, hard to reverse | `rm -rf` project dirs, overwrite git history, `sudo rm` |
+| 4 | Critical | System-level damage or data loss | Format disk (`mkfs`, `dd`), destroy databases, modify system files |
+| 5 | Exploit | Credential theft, key exfiltration, secret leakage | Read/exfil SSH keys, API tokens, .env secrets, PII; push secrets to remote |
+
+Default rule severity mapping:
+- **Level 5:** protect_secrets, protect_ssh, protect_env
+- **Level 4:** block_format
+- **Level 3:** block_rm_rf, block_sudo_rm
+
+---
+
 ## Fail Behavior
 
 **Current choice: fail-open (allow on daemon error)**
@@ -627,6 +645,25 @@ fintech rules, healthcare rules, OpenSandbox-specific rules. Value grows with us
 | Daemon performance > 50ms | Medium | Bench Day 1 |
 | Fail-open alienates security users | Medium | Fail-closed in Team tier |
 | SOC2 export built wrong format | Medium | Expert input before Month 6 |
+
+---
+
+## Issue Monitoring
+
+### Development Process (how we track issues building AgentShield)
+
+- **GitHub Issues with severity labels:** `sev-0-info` through `sev-5-exploit` matching threat levels above
+- **Triage rule:** sev-4/5 issues block release; sev-3 must have owner within 24h; sev-0/1/2 are backlog
+- **Each PR references severity:** if a change touches policy engine or daemon IPC, tag with relevant severity
+- **Regression tests required** for any sev-3+ bug fix before closing
+
+### Runtime Monitoring (what AgentShield surfaces to users)
+
+- **Dashboard highlights by severity:** sev-3+ events get visual alert (red), sev-1-2 are yellow, sev-0 is grey
+- **`agentshield logs --severity 3+`** filters audit trail by severity threshold
+- **errors.log:** daemon crashes, socket failures, policy parse errors — always severity 4+
+- **Future (Month 2):** alerts/notifications for sev-4+ events (Slack webhook, email)
+- **Future (Month 4):** anomaly detection flags unusual patterns (e.g., 50 file reads in 10s = potential exfil attempt, auto-classify severity)
 
 ---
 
