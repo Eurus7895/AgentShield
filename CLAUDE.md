@@ -168,7 +168,19 @@ pre_tool.py exits 0 (allow) or 2 (block)
 ### Adapter Layer
 
 **Adapter 1 — Claude Code Hook (ships Week 1)**
-Official `PreToolUse` / `PostToolUse` Hooks API.
+Target: Claude Code **v2.1.78+**. Official Hooks API.
+
+MVP uses `PreToolUse` + `PostToolUse`. Additional hooks available for future use:
+
+| Hook | Since | Use for AgentShield |
+|------|-------|-------------------|
+| `PreToolUse` | — | **MVP** — policy enforcement, block dangerous calls |
+| `PostToolUse` | — | **MVP** — credential scanning, audit logging |
+| `StopFailure` | v2.1.78 | Detect API errors (rate limit, auth fail) |
+| `InstructionsLoaded` | v2.1.69 | Detect when CLAUDE.md/rules change mid-session |
+| `PostCompact` | v2.1.76 | Track conversation compaction events |
+| `Elicitation` | v2.1.76 | Intercept MCP elicitation responses (future) |
+| `SessionStart` / `SessionEnd` | — | Session lifecycle tracking (future) |
 
 ```json
 {
@@ -186,8 +198,14 @@ Official `PreToolUse` / `PostToolUse` Hooks API.
 ```
 
 Hook protocol:
-- stdin: `{ "tool_name": "bash", "tool_input": {...}, "session_id": "abc" }`
+- stdin: `{ "tool_name": "bash", "tool_input": {...}, "session_id": "abc", "agent_id": "...", "agent_type": "..." }`
 - exit 0 → allow | exit 2 → block | exit 1 → hook error
+
+**Claude Code compatibility notes (v2.1.78):**
+- PreToolUse returning `"allow"` previously bypassed `deny` permission rules — fixed in v2.1.78
+- SessionStart hooks fired twice on `--resume`/`--continue` — fixed in v2.1.73
+- PostToolUse block reason displayed twice — fixed in v2.1.72
+- SessionEnd hooks killed after 1.5s — now configurable via `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`
 
 **Adapter 2 — MCP Server (post-MVP, only if Week 4 users ask)**
 Any MCP-compatible agent routes through AgentShield MCP Server.
@@ -210,7 +228,8 @@ class ToolEvent:
     tool_name: str      # "bash", "read", "write", etc.
     tool_input: dict    # tool arguments
     session_id: str     # agent session ID
-    agent_id: str       # which agent
+    agent_id: str       # which agent (subagent support since v2.1.69)
+    agent_type: str     # "main" | "subagent" (since v2.1.69)
     framework: str      # "claude_code" | "mcp" | "sdk" | "opensandbox"
     timestamp: str      # ISO format
 
@@ -687,6 +706,7 @@ MONTH 6:
 - OWASP Agentic AI Top 10: https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
 - Agents of Chaos paper: https://arxiv.org/abs/2602.20021
 - OpenSandbox (Alibaba): https://github.com/alibaba/OpenSandbox
+- Claude Code Changelog: https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md
 - OpenClaw security docs: https://docs.openclaw.ai/gateway/security
 
 ---
