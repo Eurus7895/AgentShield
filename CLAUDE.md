@@ -7,8 +7,30 @@
 
 ## One Sentence
 
-AgentShield intercepts every AI agent tool call, enforces policy, and logs everything —
-starting as a security observer for Claude Code, evolving into the runtime every agent team must use.
+AgentShield is the governance and compliance layer for AI agents —
+intercept every tool call, enforce policy, log audit trail, detect anomalies.
+Regardless of where agents run — Claude Code, OpenSandbox, LangChain, or production servers —
+AgentShield knows what they're doing and controls what they're allowed to do.
+
+---
+
+## Positioning — Critical Distinction
+
+```
+OpenSandbox:   "Can this code run safely?"         → Execution isolation
+AgentShield:   "Should this agent be allowed to    → Governance + compliance
+                do this, and what did it do?"
+```
+
+**OpenSandbox is Docker for agents. AgentShield is CloudTrail + IAM Policy for agents.**
+
+These are complementary, not competing.
+OpenSandbox provides the isolation runtime. AgentShield provides the audit + policy + compliance layer on top.
+A team using OpenSandbox still needs to know: "What is our agent doing inside that sandbox?"
+
+**Do NOT position AgentShield as a runtime or sandbox.**
+Alibaba already built that — better, with more resources, open source under Apache 2.0.
+AgentShield's territory is governance, visibility, and compliance. That gap is real and unfilled.
 
 ---
 
@@ -32,30 +54,41 @@ Validated by research:
 - 48% of security professionals rank agentic AI as #1 attack vector in 2026
 - Only 34% of enterprises have AI-specific security controls
 
-This is exactly where AWS was before IAM existed.
+OpenSandbox solves isolation. AgentShield solves governance.
+Both are needed. Neither replaces the other.
 
 ---
 
 ## What AgentShield Is — Honest Definition
 
-**Current MVP: Security Observer**
-AgentShield sits alongside the agent, intercepts tool calls via hooks,
-enforces policy, logs everything. Agent runs normally — AgentShield watches and acts.
+**Current MVP: Security Observer + Policy Engine**
+
+AgentShield intercepts agent tool calls via hooks, enforces policy rules,
+logs a complete audit trail, and detects anomalous behavior.
 
 ```
-Agent → [AgentShield Observer] → Tool Execution
-              ↑
-         log + block
+Agent (anywhere)
+    │
+    ▼ via Adapter (Hook / MCP / SDK)
+┌──────────────────────────────────────┐
+│         AgentShield Engine           │
+│                                      │
+│  Policy Engine   → allow / block     │
+│  Audit Logger    → what happened     │
+│  Output Scanner  → credential leak   │
+│  Session Monitor → loop detection    │
+└──────────────────────────────────────┘
 ```
 
-**This is NOT a runtime yet.** An agent can bypass AgentShield if it doesn't
-go through the hook path. Known limitation. Accepted tradeoff for fast MVP.
+**Known limitation:** Agent can bypass if it doesn't route through hook/MCP.
+This is the tradeoff for fast MVP. Accepted.
 
-**Long-term vision: Security Runtime**
-Agent runs INSIDE AgentShield's execution environment. No bypass possible.
-Build time: Month 9-12.
+**Long-term vision: Universal Agent Governance**
+AgentShield becomes the standard governance layer for all agents —
+regardless of framework, runtime, or cloud provider.
+Works alongside OpenSandbox, not against it.
 
-**Path:** Observer (MVP) → Controller (v2) → Runtime (v3) → Infrastructure Standard
+**Path:** Observer (MVP) → Compliance Layer (v2) → Universal Governance Standard (v3)
 
 ---
 
@@ -64,10 +97,15 @@ Build time: Month 9-12.
 ```
 Dec 2025:  OWASP Top 10 for Agentic AI published
 Jan 2026:  OpenClaw — 512 vulnerabilities, 135,000 exposed instances
-Feb 2026:  "Agents of Chaos" paper published
-Mar 2026:  AgentShield — start building
-6-12mo:    Anthropic/OpenAI ship native controls → window narrows
+Mar 2026:  OpenSandbox (Alibaba) — solves isolation, NOT governance
+Mar 2026:  AgentShield — fills the governance gap OpenSandbox left open
+6-12mo:    Anthropic/OpenAI ship native audit → window for independent layer narrows
 ```
+
+**The gap OpenSandbox confirmed:** They built a world-class sandbox but shipped
+zero policy engine, zero compliance export, zero behavioral audit trail.
+That is AgentShield's market — and OpenSandbox's 3,845 stars in 2 days
+validated that the market is real and ready.
 
 ---
 
@@ -86,7 +124,10 @@ Mar 2026:  AgentShield — start building
 | 9 | False Completion | Session replay timeline | **MVP** |
 | 10 | Semantic Bypass | LLM-powered intent analysis | Layer 3 |
 
-MVP covers 4/10 fully. Layer 2 adds 3. Layer 3 completes the set.
+MVP covers 4/10. Layer 2 adds 3 more. Layer 3 completes the set.
+
+OpenSandbox covers none of these — it solves execution isolation (OWASP #2 partially),
+but does not provide policy engine, audit trail, or compliance tooling.
 
 ---
 
@@ -113,88 +154,22 @@ pre_tool.py exits 0 (allow) or 2 (block)
 ```
 
 **Why daemon, not spawn-per-call:**
-- Spawn overhead: ~80-150ms per call (load Python + import modules + connect SQLite)
-- Daemon overhead: ~2-5ms per call (Unix socket IPC, already loaded)
-- Developer notices > 100ms — daemon is mandatory, not optional
+- Spawn overhead: ~80-150ms per call
+- Daemon overhead: ~2-5ms per call (Unix socket IPC)
+- Developer notices > 100ms — daemon is mandatory
 
 **Daemon lifecycle:**
-- Auto-start on first `agentshield install`
+- Auto-start on `agentshield install`
 - Managed via `launchd` (macOS) or `systemd --user` (Linux)
-- `agentshield status` shows daemon health
-- Falls back to fail-open if daemon unreachable (see: Fail Behavior below)
+- Falls back to fail-open if daemon unreachable
 
 ---
 
-### System Architecture
+### Adapter Layer
 
-```
-Any Agent (Claude Code / LangChain / CrewAI / AutoGen / Custom)
-    │
-    ▼ via Adapter
-┌─────────────────────────────────────────────┐
-│            AgentShield Daemon               │
-│                                             │
-│  Policy Engine    →  allow / block          │
-│  SQLite Logger    →  every call logged      │
-│  Output Scanner   →  credential detect      │
-│  Session Monitor  →  loop detection         │
-│                                             │
-│  Unix socket: /tmp/agentshield.sock         │
-└─────────────────────────────────────────────┘
-    ↑                           ↑
-pre_tool.py              MCP Server / SDK
-(Claude Code adapter)    (other adapters)
-```
+**Adapter 1 — Claude Code Hook (ships Week 1)**
+Official `PreToolUse` / `PostToolUse` Hooks API.
 
----
-
-### MVP Scope: Claude Code Adapter Only
-
-**Decision (fixed):** MCP Server is NOT in MVP. Removed.
-
-Reason: MCP Server adds complexity before any user validation. Claude Code
-adapter validates the core engine. MCP adapter ships only if Week 4 users
-explicitly ask for other framework support.
-
-```
-MVP adapters:
-  ✅ Claude Code Hook (pre_tool.py + post_tool.py)
-
-Post-MVP adapters (only if users ask):
-  ⬜ MCP Server adapter (Week 5+ if validated)
-  ⬜ Python SDK adapter (Month 2 if validated)
-```
-
----
-
-### Claude Code Adapter Protocol
-
-**stdin from Claude Code:**
-```json
-{
-  "tool_name": "bash",
-  "tool_input": { "command": "rm -rf /tmp/test" },
-  "session_id": "abc123",
-  "hook_event_name": "PreToolUse"
-}
-```
-
-**pre_tool.py flow (stdlib only):**
-```
-1. Read stdin JSON
-2. Send ToolEvent to daemon via Unix socket (/tmp/agentshield.sock)
-3. Receive EngineDecision from daemon
-4. If action == "block": print message, exit 2
-5. If action == "allow": exit 0
-6. If daemon unreachable: exit 0 (fail-open) + log to ~/.agentshield/errors.log
-```
-
-**Exit codes:**
-- `exit 0` → allow tool to run
-- `exit 2` → block tool (stdout shown to agent as error)
-- `exit 1` → hook failed (Claude Code logs, continues — avoid this)
-
-**Hook config:** `~/.claude/settings.json`
 ```json
 {
   "hooks": {
@@ -210,37 +185,40 @@ Post-MVP adapters (only if users ask):
 }
 ```
 
+Hook protocol:
+- stdin: `{ "tool_name": "bash", "tool_input": {...}, "session_id": "abc" }`
+- exit 0 → allow | exit 2 → block | exit 1 → hook error
+
+**Adapter 2 — MCP Server (post-MVP, only if Week 4 users ask)**
+Any MCP-compatible agent routes through AgentShield MCP Server.
+
+**Adapter 3 — Python SDK (Month 2, only if Week 4 users ask)**
+`@shield.protect()` decorator for LangChain, CrewAI, custom agents.
+
+**Adapter 4 — OpenSandbox Integration (Month 3+)**
+AgentShield governance layer wrapping OpenSandbox execution environment.
+Agents run in OpenSandbox (isolation) + monitored by AgentShield (governance).
+This is the complementary stack: OpenSandbox for WHERE, AgentShield for WHAT.
+
 ---
 
 ### Core Engine Interface
 
 ```python
-# agentshield/engine/core.py
-
-from dataclasses import dataclass
-
 @dataclass
 class ToolEvent:
-    tool_name: str      # "bash", "read", "write", "edit", etc.
+    tool_name: str      # "bash", "read", "write", etc.
     tool_input: dict    # tool arguments
     session_id: str     # agent session ID
-    agent_id: str       # which agent (future: multi-agent)
-    framework: str      # "claude_code" | "mcp" | "sdk"
+    agent_id: str       # which agent
+    framework: str      # "claude_code" | "mcp" | "sdk" | "opensandbox"
     timestamp: str      # ISO format
 
 @dataclass
 class EngineDecision:
     action: str         # "allow" or "block"
-    reason: str | None  # policy rule name if blocked
-    message: str | None # message shown to agent if blocked
-
-class AgentShieldEngine:
-    def evaluate(self, event: ToolEvent) -> EngineDecision:
-        # 1. Load policy (cached, hot-reload on file change)
-        # 2. Evaluate rules (first-match-wins)
-        # 3. Log to SQLite
-        # 4. Return decision
-        ...
+    reason: str | None  # rule name if blocked
+    message: str | None # shown to agent if blocked
 ```
 
 ---
@@ -248,7 +226,7 @@ class AgentShieldEngine:
 ## File Structure
 
 ```
-agentshield/                    ← pip install agentshield
+agentshield/
     __init__.py
     daemon/
         server.py               ← Long-running daemon (Unix socket server)
@@ -257,36 +235,38 @@ agentshield/                    ← pip install agentshield
         core.py                 ← AgentShieldEngine, ToolEvent, EngineDecision
         policy.py               ← YAML rule evaluation, first-match-wins
         logger.py               ← SQLite WAL logging
-        scanner.py              ← Credential/PII detection in output
+        scanner.py              ← Credential/PII detection
         monitor.py              ← Session monitor, loop detection
     adapters/
         claude_code/
             pre_tool.py         ← PreToolUse hook (stdlib only)
             post_tool.py        ← PostToolUse hook (stdlib only)
             installer.py        ← Writes ~/.claude/settings.json, starts daemon
-        mcp_server/             ← NOT in MVP — stubbed for future
+        mcp_server/             ← Post-MVP stub
             server.py
-        sdk/                    ← NOT in MVP — stubbed for future
+        sdk/                    ← Post-MVP stub
             wrapper.py
+        opensandbox/            ← Month 3+ stub
+            integration.py
     policy/
-        loader.py               ← Load + watch policy.yaml
-        defaults.py             ← Safe default rules (shipped with package)
+        loader.py
+        defaults.py
     storage/
-        db.py                   ← SQLite WAL operations
-        schema.sql              ← DB schema (see below)
+        db.py
+        schema.sql
     dashboard/
-        server.py               ← FastAPI server
+        server.py
         templates/
-            index.html          ← Single-file UI
-    cli.py                      ← CLI entry point
+            index.html
+    cli.py
 
-~/.agentshield/                 ← Runtime files (created on install)
-    pre_tool.py                 ← Deployed Claude Code hook
-    post_tool.py                ← Deployed Claude Code hook
-    policy.yaml                 ← User policy config
-    logs.db                     ← SQLite audit log (WAL mode)
-    errors.log                  ← Daemon communication errors
-    agentshield.sock            ← Unix socket (daemon IPC)
+~/.agentshield/
+    pre_tool.py
+    post_tool.py
+    policy.yaml
+    logs.db
+    errors.log
+    agentshield.sock
 
 tests/
     test_engine.py
@@ -327,7 +307,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     block_count INTEGER NOT NULL DEFAULT 0
 );
 
--- Deduplication: prevent double-logging if multiple adapters active
+-- Deduplication: prevent double-logging
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dedup
     ON tool_calls(session_id, tool, ts, framework);
 
@@ -337,14 +317,12 @@ CREATE INDEX IF NOT EXISTS idx_blocked   ON tool_calls(blocked);
 CREATE INDEX IF NOT EXISTS idx_framework ON tool_calls(framework);
 ```
 
-**Note:** `UNIQUE INDEX idx_dedup` prevents double-logging when multiple
-adapters are active for the same session. INSERT OR IGNORE in db.py.
+`framework` column — tracks which adapter generated each event.
+Foundation for cross-framework governance analytics (the data moat).
 
 ---
 
 ## Policy Engine
-
-**File:** `~/.agentshield/policy.yaml`
 
 ```yaml
 version: 1
@@ -391,55 +369,37 @@ rules:
 ```
 
 Evaluation: sort by priority desc → first match wins → default allow.
-Policy file is watched for changes — hot-reload without daemon restart.
+Policy hot-reload: daemon watches policy.yaml, reloads on change (debounced 500ms).
 
 ---
 
 ## Fail Behavior
 
-**Decision (noted, not yet validated with users):**
+**Current choice: fail-open (allow on daemon error)**
 
-Current choice: **fail-open** (allow on daemon error)
-
-Rationale: AgentShield is a developer tool first, security tool second in MVP.
-Blocking developer workflow when daemon is down → immediate uninstall.
-Better to allow and log the miss than to block and lose the user.
+Rationale: developer tool first — don't break workflow.
 
 ```
 Daemon unreachable → pre_tool.py:
-  1. exit 0 (allow tool to run)
+  1. exit 0 (allow)
   2. append to ~/.agentshield/errors.log
-  3. agentshield status shows "daemon offline" warning
+  3. agentshield status shows "daemon offline"
 ```
 
-**⚠️ NOTE FOR FUTURE:** Enterprise customers will expect fail-closed behavior.
-When Team/Enterprise tier ships, add `fail_behavior: open|closed` to policy.yaml.
-Fail-closed should be the default for any workspace tagged as `production: true`.
+**⚠️ Future:** Add `fail_behavior: open|closed` in policy.yaml.
+Enterprise workspaces tagged `production: true` should default fail-closed.
 
 ---
 
 ## CLI Commands
 
 ```bash
-# Install + start daemon
-agentshield install
-
-# Check daemon status
-agentshield status
-
-# Show last N tool calls
+agentshield install             # Install hooks + start daemon
+agentshield status              # Check daemon health
 agentshield logs [--last 20] [--blocked-only] [--since 1h]
-
-# Start dashboard
 agentshield dashboard [--port 7432]
-
-# Validate policy
 agentshield policy check
-
-# Export audit log
 agentshield export [--format json|csv] [--since 7d]
-
-# Daemon management
 agentshield daemon start|stop|restart|status
 ```
 
@@ -456,41 +416,41 @@ agentshield daemon start|stop|restart|status
 | Storage | SQLite WAL | Local, fast, concurrent reads |
 | CLI | Typer | Clean, type-safe |
 | Dashboard | FastAPI + plain HTML | No React build step |
-| Daemon management | launchd (mac) / systemd --user (linux) | Native, reliable |
+| Daemon mgmt | launchd / systemd --user | Native, reliable |
 | Package | pyproject.toml | Modern Python packaging |
 
 ---
 
 ## Key Design Decisions
 
-**1. Daemon architecture (fixed)**
-pre_tool.py is stdlib only — cannot use PyYAML for policy evaluation.
-Daemon is a long-running process that holds all deps in memory.
-IPC via Unix socket: ~2-5ms overhead vs ~100ms+ for spawn-per-call.
+**1. Governance positioning, not runtime (updated)**
+AgentShield does not compete with OpenSandbox. Governance ≠ isolation.
+The question is not "can this run safely?" but "should this agent be allowed
+to do this, and what did it actually do?"
 
-**2. Fail-open in MVP (noted)**
-Developer tool priority: don't break workflow. Fail-closed is a future
-enterprise option configurable per workspace. See Fail Behavior section.
+**2. Daemon architecture (fixed)**
+stdlib-only `pre_tool.py` cannot evaluate YAML policy. Daemon holds full deps.
+IPC via Unix socket: ~2-5ms vs ~100ms spawn-per-call.
 
-**3. MCP Server NOT in MVP (fixed)**
-Scope creep removed. Ships only if Week 4 users ask for it explicitly.
+**3. Fail-open in MVP (noted)**
+Flip to fail-closed in Team/Enterprise tier via policy.yaml config.
 
-**4. Deduplication via UNIQUE INDEX (fixed)**
-Prevents double-logging if multiple adapters active for same session.
-INSERT OR IGNORE in db.py handles this transparently.
+**4. MCP + SDK post-MVP only (fixed)**
+Ships only if Week 4 users explicitly ask. Scope creep removed.
 
-**5. framework column from day one (fixed)**
-Every log row has framework="claude_code" in MVP. Enables cross-framework
-analytics when MCP/SDK adapters ship. Schema migration later is painful.
+**5. OpenSandbox as integration target, not competitor (updated)**
+AgentShield + OpenSandbox = complete agent security stack.
+OpenSandbox: WHERE agents run safely.
+AgentShield: WHAT agents are allowed to do and audit of what they did.
 
-**6. Policy hot-reload (fixed)**
-Daemon watches policy.yaml with watchdog or polling. No restart required
-when developer edits policy. Reload on file change, debounced 500ms.
+**6. Deduplication via UNIQUE INDEX (fixed)**
+Prevents double-logging when multiple adapters active.
 
-**7. Observer now, runtime later (honest)**
-MVP cannot prevent bypass if agent doesn't route through hooks.
-Runtime (Docker sandbox, no bypass) is Month 9+.
-Do not claim runtime capabilities in documentation or marketing.
+**7. framework column from day one (fixed)**
+Enables cross-framework governance analytics — the data moat.
+
+**8. Policy: first-match-wins, deny dangerous, allow rest**
+Simple and predictable. Safe out of the box.
 
 ---
 
@@ -498,7 +458,7 @@ Do not claim runtime capabilities in documentation or marketing.
 
 **In:**
 ```
-✅ AgentShield Daemon (long-running, Unix socket server)
+✅ AgentShield Daemon (long-running, Unix socket)
 ✅ Claude Code adapter (pre_tool.py + post_tool.py, stdlib only)
 ✅ Policy engine (YAML, first-match-wins, hot-reload)
 ✅ SQLite audit log (WAL, deduplication, framework column)
@@ -512,15 +472,16 @@ Do not claim runtime capabilities in documentation or marketing.
 ```
 ❌ MCP Server adapter (post-MVP, only if users ask)
 ❌ Python SDK adapter (Month 2, only if users ask)
+❌ OpenSandbox integration (Month 3+)
 ❌ Circuit breaker / loop detection (Month 2)
 ❌ Prompt injection scanner (Month 3)
 ❌ Cloud sync (Month 2)
 ❌ Team features (Month 2)
-❌ Payments / Stripe (Month 2)
+❌ Payments (Month 2)
 ❌ AI-powered detection (Month 4)
 ❌ Compliance export / SOC2 (Month 6+)
 ❌ Fail-closed mode (Team/Enterprise tier)
-❌ Docker sandbox runtime (Month 9+)
+❌ Docker sandbox runtime — NOT in roadmap (OpenSandbox already owns this)
 ```
 
 ---
@@ -529,31 +490,28 @@ Do not claim runtime capabilities in documentation or marketing.
 
 ```
 Week 1:   Daemon core + Claude Code adapter
-          Goal: logs.db has first real entry from live Claude Code session
-          Bench: pre_tool.py → daemon → decision in < 20ms total
+          Goal: logs.db has first real entry in < 20ms
 
 Week 2:   CLI + Dashboard + install experience
-          Goal: pip install agentshield && agentshield install
-                works on a clean machine in under 2 minutes
+          Goal: pip install agentshield works in 2 minutes
 
-Week 3:   PyPI publish + README + demo GIF + distribution
+Week 3:   PyPI + README + demo GIF
           Post: r/ClaudeAI, r/AIAgents, HN Show HN
           Goal: 50 installs
 
-Week 4:   Talk to 5 users (no pitching, only listening)
+Week 4:   Talk to 5 users
           Questions: "What made you install?" + "What would you pay for?"
-          Decision gate:
-            3+ clear pain descriptions → build team features
-            1+ payment offer → build Stripe immediately
-            MCP requests → build MCP adapter
-            0 pain → change positioning, not product
+          Gate: 3+ pain descriptions → team features
+                1+ payment offer → build Stripe immediately
+                MCP requests → build MCP adapter
+                OpenSandbox users → build OpenSandbox integration
 
-Month 2:  Python SDK + circuit breaker + team features + Stripe
-Month 3:  Prompt injection scanner + LangChain integration
-Month 4:  Anomaly detection v1
+Month 2:  SDK + circuit breaker + team features + Stripe
+Month 3:  Prompt injection scanner + OpenSandbox integration
+Month 4:  Anomaly detection v1 + LangChain
 Month 6:  SOC2 compliance export + first enterprise conversation
-Month 9+: Docker sandbox runtime
-Year 2:   Full OWASP Top 10 + infrastructure standard
+Year 1:   Universal governance standard — works with any runtime
+Year 2:   Full OWASP Top 10 coverage
 ```
 
 ---
@@ -565,60 +523,76 @@ Free      Local only, 7-day retention, 1 agent
           Goal: adoption + word of mouth
 
 Pro       $9/mo — unlimited history, cloud backup, alerts, 3 agents
-          NOTE: pricing not validated — adjust after Week 4 conversations
+          NOTE: not validated — adjust after Week 4
 
 Team      $49/mo per workspace — shared dashboard, shared policy,
-          attribution per developer, fail-closed mode option
-          NOTE: pricing not validated
+          attribution per developer, fail-closed option
+          NOTE: not validated
 
-Enterprise Custom — SOC2 export, SSO, SLA, on-prem, fail-closed default
-          NOTE: need SOC2 expert input before building (Month 5)
+Enterprise Custom ($500-2000/mo) — SOC2 export, SSO, SLA, on-prem
+          NOTE: need SOC2 expert before building (Month 5)
 ```
 
-**⚠️ Pricing note:** Security tools typically price higher than dev tools.
-Snyk Team: $52/5 devs. Datadog: $31/host. Validate pricing in Week 4
-conversations before putting numbers on landing page.
+**⚠️ Pricing note:** Security/governance tools price higher than dev tools.
+Validate pricing in Week 4 before putting numbers on landing page.
+
+---
+
+## Competitive Landscape
+
+| Tool | What it does | Gap vs AgentShield |
+|------|-------------|-------------------|
+| **OpenSandbox (Alibaba)** | Execution isolation, container runtime | No policy engine, no audit trail, no compliance |
+| LangSmith | Observability for LangChain | No enforcement, no blocking, LangChain-only |
+| Portkey | LLM gateway + guardrails | API-level only, not tool-call level |
+| Helicone | LLM usage analytics | Cost tracking only, no security |
+| Invariant | Agent testing | Pre-deployment, not runtime enforcement |
+
+**AgentShield's unique position:**
+- Only tool focused on governance + compliance (not just isolation or observability)
+- Works alongside OpenSandbox — the two tools complete each other
+- Cross-framework behavioral data — sees Claude Code + LangChain + OpenSandbox simultaneously
 
 ---
 
 ## Moat
 
-**Moat 1 — Cross-platform behavioral data**
-AgentShield sees all frameworks. Anthropic sees only Claude. OpenAI sees only GPT.
-`framework` column enables this from day one. Collect opt-in telemetry from install 1.
+**Moat 1 — Cross-framework governance data**
+AgentShield sees all frameworks. Anthropic sees Claude only. OpenAI sees GPT only.
+OpenSandbox sees their sandbox only. `framework` column enables cross-framework
+behavioral analytics from day one. No one else can replicate this dataset.
 
 **Moat 2 — Compliance workflow lock-in**
-Once security team integrates AgentShield into SOC2 process, switching cost
-is organizational inertia. Build compliance features early (Month 6).
-⚠️ Need SOC2 expert input on evidence format before building.
+Once security team integrates AgentShield into SOC2/GDPR process,
+switching cost is organizational inertia. Build compliance features early.
+⚠️ Talk to SOC2 expert before building compliance export (Month 5).
 
 **Moat 3 — Policy template network effect**
-1,000 teams = 1,000 policy rule sets. Policy Template Marketplace: fintech,
-healthcare, startup rules. Value grows with users.
+1,000 teams = 1,000 policy sets. Policy Template Marketplace by framework:
+fintech rules, healthcare rules, OpenSandbox-specific rules. Value grows with users.
 
 ---
 
 ## Go-To-Market
 
 **Phase 1 — Seeding (Week 3-4):** 50 installs
-- Reddit: r/ClaudeAI, r/AIAgents, r/LocalLLaMA (story format, not announcement)
+- Reddit: r/ClaudeAI, r/AIAgents, r/LocalLLaMA
 - HN Show HN
-- Discord: Claude Code, LangChain, OpenClaw (question first, link when asked)
-- Angle: "After reading Agents of Chaos paper + OWASP Top 10 for Agentic AI —
-  I built the tool that implements their recommendations."
+- Discord: Claude Code, LangChain, OpenClaw
+- Angle: "OpenSandbox solves isolation. I built the governance layer it doesn't have."
 
 **Phase 2 — Content Engine (Month 2):** 500 installs
-- Data series from real behavioral data: "What AI agents actually do when
-  you're not watching" — unique asset no one else has
+- "What AI agents actually do when you're not watching"
+- Real behavioral data — no one else has this
 
-**Phase 3 — Partnerships (Month 3-4):** 1,000 installs
-- ClawHub (OpenClaw skills — 310k users)
-- LangChain docs integration
-- Dev newsletters: TLDR, Bytes.dev, Python Weekly
+**Phase 3 — OpenSandbox integration (Month 3):** 1,000 installs
+- Submit to OpenSandbox ecosystem / examples
+- Position as the natural companion tool
+- Joint distribution with OpenSandbox community
 
 **Phase 4 — Enterprise (Month 5-8):** First contract
 - 1 advisor with CISO/DevSecOps background before Month 4
-- Target: companies finishing SOC2 Type 1, working toward Type 2
+- Target: companies using OpenSandbox that need compliance on top
 
 ---
 
@@ -626,14 +600,14 @@ healthcare, startup rules. Value grows with users.
 
 | Risk | Prob | Mitigation |
 |------|------|------------|
-| Anthropic ships native audit/policy | High | Cross-platform data moat |
-| Zero user validation so far | Critical | Week 4: 5 conversations minimum |
+| Anthropic ships native audit/policy | High | Cross-framework data moat |
+| OpenSandbox adds governance features | Medium | They focus on isolation — governance is different domain |
+| Zero user validation | Critical | Week 4: 5 conversations before building more |
 | No enterprise network | High | Security advisor before Month 4 |
-| Funded competitor enters | Medium | Ship Week 2, accumulate data first |
-| Daemon performance > 50ms | Medium | Bench Day 1, optimize before shipping |
-| Fail-open alienates security users | Medium | Add fail-closed in Team tier |
-| SOC2 export built wrong format | Medium | Expert input before Month 6 build |
-| Hooks API deprecation | Low | Abstract adapter layer |
+| Funded competitor enters | Medium | Ship Week 2, get users, accumulate data |
+| Daemon performance > 50ms | Medium | Bench Day 1 |
+| Fail-open alienates security users | Medium | Fail-closed in Team tier |
+| SOC2 export built wrong format | Medium | Expert input before Month 6 |
 
 ---
 
@@ -641,67 +615,67 @@ healthcare, startup rules. Value grows with users.
 
 ```
 Daemon:
-[ ] Daemon starts, creates Unix socket at /tmp/agentshield.sock
-[ ] Daemon receives ToolEvent, returns EngineDecision in < 5ms
-[ ] Daemon hot-reloads policy.yaml on file change
-[ ] Daemon restarts via launchd/systemd on crash
+[ ] Starts, creates /tmp/agentshield.sock
+[ ] Receives ToolEvent, returns EngineDecision in < 5ms
+[ ] Hot-reloads policy.yaml on change
+[ ] Restarts via launchd/systemd on crash
 
 Policy engine:
 [ ] Rules evaluate in correct priority order
-[ ] First-match-wins confirmed with test cases
+[ ] First-match-wins confirmed
 [ ] Default allow when no rule matches
 
 SQLite:
 [ ] Every event logged with framework column
 [ ] UNIQUE INDEX prevents duplicates (INSERT OR IGNORE)
-[ ] WAL mode confirmed (PRAGMA journal_mode returns "wal")
+[ ] WAL mode confirmed
 [ ] Dashboard reads while hook writes — no lock
 
 Claude Code adapter:
-[ ] pre_tool.py stdlib only (grep for imports, none outside stdlib)
-[ ] pre_tool.py → daemon → decision in < 20ms total
-[ ] rm -rf → exit 2 with message in < 20ms
+[ ] pre_tool.py stdlib only (no non-stdlib imports)
+[ ] pre_tool.py → daemon → decision in < 20ms
+[ ] rm -rf → exit 2 in < 20ms
 [ ] Normal file read → exit 0 in < 20ms
-[ ] Daemon unreachable → exit 0 + errors.log entry (fail-open)
+[ ] Daemon unreachable → exit 0 + errors.log (fail-open)
 
 Install:
-[ ] agentshield install writes correct settings.json
-[ ] agentshield install starts daemon
-[ ] pip install agentshield + install works in < 2 minutes clean machine
+[ ] agentshield install writes settings.json + starts daemon
+[ ] pip install + install works in < 2 min on clean machine
 
 Dashboard:
-[ ] Timeline shows tool calls with blocked status
-[ ] Blocked calls highlighted
-[ ] agentshield logs CLI matches dashboard data
+[ ] Timeline with blocked highlights
+[ ] agentshield logs matches dashboard data
 ```
 
 ---
 
-## Known Issues / TODOs
+## TODOs
 
 ```
 BEFORE CODING:
-  TODO: Validate fail-open choice with first 5 users (may need to flip)
-  TODO: Decide daemon IPC: Unix socket vs named pipe (Windows compat)
+  TODO: Validate fail-open with first 5 users
+  TODO: Decide IPC: Unix socket vs named pipe (Windows compat)
 
 WEEK 1:
-  TODO: Bench pre_tool.py → daemon round trip, must be < 20ms
-  TODO: Session ID extraction from Claude Code env vars (undocumented)
-  TODO: Daemon launchd plist for macOS auto-start
-  TODO: Daemon systemd --user service for Linux auto-start
+  TODO: Bench pre_tool.py → daemon round trip (target < 20ms)
+  TODO: Session ID from Claude Code env vars
+  TODO: launchd plist (macOS) + systemd --user (Linux)
 
 WEEK 2:
-  TODO: post_tool.py credential detection patterns (regex library)
-  TODO: Windows/WSL path normalization in policy matching
+  TODO: post_tool.py credential detection patterns
+  TODO: Windows/WSL path normalization
 
 MONTH 2:
-  TODO: Circuit breaker implementation (call count + time window)
-  TODO: MCP Server (only if Week 4 users ask for it)
+  TODO: Circuit breaker (call count + time window)
+  TODO: MCP Server (only if Week 4 users ask)
   TODO: Stripe integration
 
+MONTH 3:
+  TODO: OpenSandbox integration design
+  TODO: How AgentShield hooks into OpenSandbox execution events
+
 MONTH 6:
-  TODO: Talk to SOC2 expert before building compliance export
-  TODO: Understand auditor's exact evidence format requirements
+  TODO: SOC2 expert consultation before building compliance export
 ```
 
 ---
@@ -712,6 +686,7 @@ MONTH 6:
 - MCP Python SDK: https://github.com/modelcontextprotocol/python-sdk
 - OWASP Agentic AI Top 10: https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
 - Agents of Chaos paper: https://arxiv.org/abs/2602.20021
+- OpenSandbox (Alibaba): https://github.com/alibaba/OpenSandbox
 - OpenClaw security docs: https://docs.openclaw.ai/gateway/security
 
 ---
@@ -719,5 +694,6 @@ MONTH 6:
 *Last updated: March 2026*
 *Phase: MVP — Week 1*
 *Status: pre-build*
+*Positioning: Governance + Compliance layer (not runtime — OpenSandbox owns that)*
 *Next action: build daemon/server.py + adapters/claude_code/pre_tool.py*
 *Next milestone: first real tool call logged to logs.db in < 20ms*
