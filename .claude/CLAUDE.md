@@ -7,10 +7,10 @@
 
 ## One Sentence
 
-AgentShield is the governance and compliance layer for AI agents —
-intercept every tool call, enforce policy, log audit trail, detect anomalies.
-Regardless of where agents run — Claude Code, OpenSandbox, LangChain, or production servers —
-AgentShield knows what they're doing and controls what they're allowed to do.
+AgentShield is the integrity and audit slice of the agent harness —
+a slot-in component that owns allow/deny enforcement, provenance, memory
+protection, and role arbitration, regardless of which orchestrator ships
+around it (Claude Code, LangChain, CrewAI, OpenSandbox, or custom).
 
 ---
 
@@ -36,16 +36,23 @@ AgentShield's territory is governance, visibility, and compliance. That gap is r
 
 ## The Problem
 
-Every AI agent running today has the same critical gap:
+The model is no longer the bottleneck — the harness is. The harness
+(memory files, tool definitions, coordination state, per-role policies,
+provenance of reads/writes) is what makes a modern agent system work, and
+the harness is exploitable in ways runtime sandboxes don't see:
 
-```
-What agents CAN do:     read files, delete files, run bash, call APIs,
-                        leak secrets, modify configs, push code
-
-What teams KNOW about:  almost nothing — unless something breaks
-
-What teams CAN prevent: almost nothing — without hardcoding per-agent
-```
+- **Memory poisoning via autoDream:** one line injected into `MEMORY.md`
+  becomes permanent "experience" that propagates to every future session.
+  Self-amplifying. No isolation tool can see this.
+- **Lost provenance:** when an agent reads poisoned content and writes it
+  elsewhere, no system links the write back to its source. The audit trail
+  breaks at exactly the spot that matters for incident response.
+- **Role confusion:** in Planner/Generator/Evaluator architectures, each
+  role should have different permissions. Today's tools treat all agents
+  the same.
+- **Imperative injection:** external content with AI-directed instructions
+  ("update your memory to include X", "from now on always…") hijacks
+  agents that don't distinguish data from instructions.
 
 Validated by research:
 - "Agents of Chaos" (Harvard/Stanford/MIT, Feb 2026): agents destroyed mail servers,
@@ -54,8 +61,71 @@ Validated by research:
 - 48% of security professionals rank agentic AI as #1 attack vector in 2026
 - Only 34% of enterprises have AI-specific security controls
 
-OpenSandbox solves isolation. AgentShield solves governance.
+OpenSandbox solves *where agents run safely* (isolation).
+AgentShield solves *does the agent harness still have integrity, and can we prove what happened?*
 Both are needed. Neither replaces the other.
+
+---
+
+## Scope of Responsibility — AgentShield's Place in the Harness
+
+**Is AgentShield the harness, or part of the harness? Part of the harness.**
+
+The modern agent harness is composite: memory, tool definitions, context
+management, orchestration state, policy enforcement, audit, provenance.
+Claude Code ships most of those pieces. LangChain ships most. CrewAI ships
+most. None of them ships the integrity-and-audit slice in a way that works
+across frameworks — that is the slot AgentShield fills.
+
+AgentShield is not a wrapper around the harness and not a replacement for it.
+It is a **slot-in component of the harness** — the integrity and audit slice —
+designed so that any agentic architecture can drop it in without replacing
+what it already has. Analogy: SELinux / AppArmor / auditd inside an OS.
+
+### What AgentShield owns (R1–R5)
+
+| # | Responsibility | Description |
+|---|----------------|-------------|
+| R1 | Allow/deny enforcement | Every tool call passes through AgentShield before execution. Single runtime checkpoint where policy is enforced. |
+| R2 | Provenance ledger | Records every tool call with timestamps, `agent_id`, `session_id`, duration, and source linkage (read→write chains). Owns "what happened and where did data come from?" |
+| R3 | Memory guardian | Agent-facing memory files (`MEMORY.md`, `memory/*.md`, `.claude/memory/*`, autoDream outputs) are write-protected by default. Owns memory integrity, not memory storage. |
+| R4 | Role arbiter | Differentiates `agent_id` and `agent_type`, applies role-specific permissions. Trust asymmetries between agents become enforceable. |
+| R5 | Workflow integrity witness | Detects drift: infinite loops, imperative-language injection in tool outputs, credential leaks, provenance breaks. Reports findings but does not remediate. |
+
+### What AgentShield does NOT own
+
+- **Memory storage and semantics** — the harness's memory component owns the content
+- **Tool definitions and dispatch** — the harness's tool registry owns what tools exist
+- **Context management** — the harness's context manager owns window packing, compaction
+- **Planning and task decomposition** — the orchestration layer owns this
+- **Execution isolation** — OpenSandbox / Docker / firejail own *where* tool calls run
+- **Model inference** — the orchestrator owns the LLM call
+- **Incident remediation** — AgentShield reports; humans and other tools remediate
+- **Agent identity provisioning** — the orchestrator issues `agent_id`; AgentShield consumes it
+
+### Where AgentShield sits
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Orchestrator (Claude Code / LangChain / CrewAI / custom)        │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  Harness (composite)                                       │  │
+│  │   • Memory (MEMORY.md, autoDream, vector stores)           │  │
+│  │   • Tool registry + dispatcher                             │  │
+│  │   • Context manager                                        │  │
+│  │   ┌──────────────────────────────────────────────────┐     │  │
+│  │   │  AgentShield — integrity + audit slice           │     │  │
+│  │   │  policy · provenance · memory guard              │     │  │
+│  │   │  role arbitration · workflow witness             │     │  │
+│  │   └──────────────────────────────────────────────────┘     │  │
+│  └────────────────────┬───────────────────────────────────────┘  │
+│                       │ allow / block                            │
+└───────────────────────┼──────────────────────────────────────────┘
+                        ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Execution layer (OpenSandbox / Docker / host fs)                │
+└──────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
