@@ -181,20 +181,20 @@ validated that the market is real and ready.
 
 ## OWASP Coverage
 
-| # | Risk | AgentShield Response | Phase |
-|---|------|---------------------|-------|
-| 1 | Goal Hijack | Prompt injection scanner (static v1, AI v2) | Layer 2 |
-| 2 | Tool Misuse | Policy engine + PreToolUse blocking | **MVP** |
-| 3 | Identity Abuse | Agent identity + command allowlist | Layer 3 |
-| 4 | Delegated Authority | Agent chain audit + visualization | Layer 2 |
-| 5 | Insecure Output | PostToolUse credential scanning | **MVP** |
-| 6 | Memory Poisoning | Memory vault + isolated memory per agent | Layer 3 |
+| # | Risk | AgentShield Response | Status |
+|---|------|---------------------|--------|
+| 1 | Goal Hijack | Imperative-language detection in output scanner (R5) | **Shipped** (partial) |
+| 2 | Tool Misuse | Policy engine + PreToolUse blocking (R1) | **Shipped** |
+| 3 | Identity Abuse | Per-agent-role policies via `agent_id`/`agent_type` (R4) | **Shipped** (partial) |
+| 4 | Delegated Authority | Provenance ledger — `source_event_id` column seeded (R2) | **Shipped** (partial) |
+| 5 | Insecure Output | PostToolUse credential scanning — 7 patterns (R5) | **Shipped** |
+| 6 | Memory Poisoning | Memory guardian — write-protect MEMORY.md + autoDream (R3) | **Shipped** |
 | 7 | Multi-Agent Cascade | Session isolation + cross-agent audit | Layer 2 |
-| 8 | Infinite Loop | Circuit breaker + session monitor | **MVP** |
-| 9 | False Completion | Session replay timeline | **MVP** |
+| 8 | Infinite Loop | Session monitor — sliding-window loop detection (R5) | **Shipped** |
+| 9 | False Completion | Session replay timeline (needs dashboard) | Week 2 |
 | 10 | Semantic Bypass | LLM-powered intent analysis | Layer 3 |
 
-MVP covers 4/10. Layer 2 adds 3 more. Layer 3 completes the set.
+Shipped: 7/10 (4 full, 3 partial). Week 2 adds dashboard for #9. Layer 2/3 complete the set.
 
 OpenSandbox covers none of these — it solves execution isolation (OWASP #2 partially),
 but does not provide policy engine, audit trail, or compliance tooling.
@@ -237,7 +237,7 @@ pre_tool.py exits 0 (allow) or 2 (block)
 
 ### Adapter Layer
 
-**Adapter 1 — Claude Code Hook (ships Week 1)**
+**Adapter 1 — Claude Code Hook (shipped Week 1)**
 Target: Claude Code **v2.1.78+**. Official Hooks API.
 
 MVP uses `PreToolUse` + `PostToolUse`. Additional hooks available for future use:
@@ -316,40 +316,35 @@ class EngineDecision:
 
 ```
 agentshield/
-    __init__.py
+    __init__.py                              ✅ shipped
     daemon/
-        server.py               ← Long-running daemon (Unix socket server)
-        startup.py              ← launchd/systemd registration
+        server.py               ← Unix socket daemon               ✅ shipped
+        startup.py              ← launchd/systemd registration     ✅ shipped
     engine/
-        core.py                 ← AgentShieldEngine, ToolEvent, EngineDecision
-        policy.py               ← YAML rule evaluation, first-match-wins
-        logger.py               ← SQLite WAL logging
-        scanner.py              ← Credential/PII detection
-        monitor.py              ← Session monitor, loop detection
+        core.py                 ← AgentShieldEngine, ToolEvent     ✅ shipped
+        policy.py               ← YAML rule evaluation             ✅ shipped
+        scanner.py              ← Credential/PII + imperative      ✅ shipped
+        monitor.py              ← Session monitor, loop detection  ✅ shipped
     adapters/
         claude_code/
-            pre_tool.py         ← PreToolUse hook (stdlib only)
-            post_tool.py        ← PostToolUse hook (stdlib only)
-            installer.py        ← Writes ~/.claude/settings.json, starts daemon
-        mcp_server/             ← Post-MVP stub
-            server.py
-        sdk/                    ← Post-MVP stub
-            wrapper.py
-        opensandbox/            ← Month 3+ stub
-            integration.py
+            pre_tool.py         ← PreToolUse hook (stdlib only)    ✅ shipped
+            post_tool.py        ← PostToolUse hook (stdlib only)   ✅ shipped
+            installer.py        ← settings.json + daemon startup   ✅ shipped
+        mcp_server/             ← Post-MVP
+        sdk/                    ← Post-MVP
+        opensandbox/            ← Month 3+
     policy/
-        loader.py
-        defaults.py
+        defaults.py             ← 8 default rules                  ✅ shipped
     storage/
-        db.py
-        schema.sql
-    dashboard/
+        db.py                   ← SQLite WAL audit logger          ✅ shipped
+        schema.sql              ← tool_calls + sessions tables     ✅ shipped
+    dashboard/                  ← NOT YET — Week 2
         server.py
         templates/
             index.html
-    cli.py
+    cli.py                      ← NOT YET — Week 2
 
-~/.agentshield/
+~/.agentshield/                 (deployed at install time)
     pre_tool.py
     post_tool.py
     policy.yaml
@@ -358,10 +353,14 @@ agentshield/
     agentshield.sock
 
 tests/
-    test_engine.py
-    test_policy.py
-    test_daemon.py
-    test_adapters.py
+    test_engine.py              ✅ 27 tests
+    test_policy.py              ✅ 30 tests
+    test_daemon.py              ✅ 10 tests
+    test_adapters.py            ✅ 15 tests
+    test_scanner.py             ✅ 21 tests
+    test_monitor.py             ✅ 10 tests
+    test_storage.py             ✅ 18 tests
+    bench_hook.py               ✅ benchmark suite
 
 pyproject.toml
 README.md
@@ -596,10 +595,10 @@ Simple and predictable. Safe out of the box.
 ## Roadmap
 
 ```
-Week 1:   Daemon core + Claude Code adapter
-          Goal: logs.db has first real entry in < 20ms
+Week 1:   Daemon core + Claude Code adapter              ✅ COMPLETE
+          Goal: logs.db has first real entry in < 20ms    ✅ CONFIRMED
 
-Week 2:   CLI + Dashboard + install experience
+Week 2:   CLI + Dashboard + install experience            ← CURRENT
           Goal: pip install agentshield works in 2 minutes
 
 Week 3:   PyPI + README + demo GIF
@@ -740,35 +739,43 @@ fintech rules, healthcare rules, OpenSandbox-specific rules. Value grows with us
 ## Testing Checklist
 
 ```
-Daemon:
-[ ] Starts, creates /tmp/agentshield.sock
-[ ] Receives ToolEvent, returns EngineDecision in < 5ms
-[ ] Hot-reloads policy.yaml on change
-[ ] Restarts via launchd/systemd on crash
+Daemon:                                                     (131 tests total)
+[x] Starts, creates /tmp/agentshield.sock                  test_daemon.py
+[x] Receives ToolEvent, returns EngineDecision in < 5ms     test_daemon.py
+[x] Hot-reloads policy.yaml on change                       test_daemon.py
+[x] Restarts via launchd/systemd on crash                   daemon/startup.py
 
 Policy engine:
-[ ] Rules evaluate in correct priority order
-[ ] First-match-wins confirmed
-[ ] Default allow when no rule matches
+[x] Rules evaluate in correct priority order                test_policy.py
+[x] First-match-wins confirmed                              test_policy.py
+[x] Default allow when no rule matches                      test_policy.py
 
 SQLite:
-[ ] Every event logged with framework column
-[ ] UNIQUE INDEX prevents duplicates (INSERT OR IGNORE)
-[ ] WAL mode confirmed
-[ ] Dashboard reads while hook writes — no lock
+[x] Every event logged with framework column                test_storage.py
+[x] UNIQUE INDEX prevents duplicates (INSERT OR IGNORE)     test_storage.py
+[x] WAL mode confirmed                                      test_storage.py
+[x] Provenance columns seeded (source_event_id)             test_storage.py
 
 Claude Code adapter:
-[ ] pre_tool.py stdlib only (no non-stdlib imports)
-[ ] pre_tool.py → daemon → decision in < 20ms
-[ ] rm -rf → exit 2 in < 20ms
-[ ] Normal file read → exit 0 in < 20ms
-[ ] Daemon unreachable → exit 0 + errors.log (fail-open)
+[x] pre_tool.py stdlib only (no non-stdlib imports)         test_adapters.py
+[x] pre_tool.py → daemon → decision in < 20ms              bench_hook.py
+[x] rm -rf → exit 2 in < 20ms                              test_adapters.py
+[x] Normal file read → exit 0 in < 20ms                    test_adapters.py
+[x] Daemon unreachable → exit 0 + errors.log (fail-open)   test_adapters.py
 
-Install:
+Scanner:
+[x] 7 credential patterns (AWS, GitHub, SSH, JWT, etc.)     test_scanner.py
+[x] 6 imperative language patterns                          test_scanner.py
+
+Monitor:
+[x] Sliding-window loop detection (30 calls / 10s)         test_monitor.py
+[x] Soft session cap (200 calls)                            test_monitor.py
+
+Install:                                                     WEEK 2
 [ ] agentshield install writes settings.json + starts daemon
 [ ] pip install + install works in < 2 min on clean machine
 
-Dashboard:
+Dashboard:                                                   WEEK 2
 [ ] Timeline with blocked highlights
 [ ] agentshield logs matches dashboard data
 ```
@@ -779,17 +786,32 @@ Dashboard:
 
 ```
 BEFORE CODING:
+  DONE: Decide IPC: Unix socket (Windows compat deferred)
   TODO: Validate fail-open with first 5 users
-  TODO: Decide IPC: Unix socket vs named pipe (Windows compat)
 
-WEEK 1:
-  TODO: Bench pre_tool.py → daemon round trip (target < 20ms)
-  TODO: Session ID from Claude Code env vars
-  TODO: launchd plist (macOS) + systemd --user (Linux)
+WEEK 1: ✅ COMPLETE
+  DONE: Bench pre_tool.py → daemon round trip (< 20ms confirmed)
+  DONE: Session ID from Claude Code env vars (stdin JSON)
+  DONE: launchd plist (macOS) + systemd --user (Linux)
+  DONE: Policy engine with YAML rules, first-match-wins, hot-reload
+  DONE: SQLite WAL logger with dedup + provenance columns
+  DONE: Output scanner — 7 credential + 6 imperative patterns
+  DONE: Session monitor — sliding-window loop detection
+  DONE: pre_tool.py + post_tool.py (stdlib only, verified)
+  DONE: Installer (idempotent settings.json merge)
+  DONE: 131 unit tests passing
 
-WEEK 2:
-  TODO: post_tool.py credential detection patterns
+WEEK 2: ← CURRENT
+  TODO: CLI entry point (Typer): install, status, logs, daemon, policy check, export, dashboard
+  TODO: Dashboard server (FastAPI, localhost:7432)
+  TODO: Dashboard UI (timeline view, blocked call highlights)
+  TODO: End-to-end test: pip install → agentshield install → logs → dashboard
   TODO: Windows/WSL path normalization
+
+WEEK 3:
+  TODO: PyPI publish
+  TODO: README with install instructions + demo GIF
+  TODO: Community posts (Reddit, HN, Discord)
 
 MONTH 2:
   TODO: Circuit breaker (call count + time window)
@@ -818,9 +840,9 @@ MONTH 6:
 
 ---
 
-*Last updated: March 2026*
-*Phase: MVP — Week 1*
-*Status: pre-build*
-*Positioning: Governance + Compliance layer (not runtime — OpenSandbox owns that)*
-*Next action: build daemon/server.py + adapters/claude_code/pre_tool.py*
-*Next milestone: first real tool call logged to logs.db in < 20ms*
+*Last updated: April 2026*
+*Phase: MVP — Week 2*
+*Status: Week 1 complete (daemon, engine, adapters, policy, storage, scanner, monitor — 131 tests passing)*
+*Positioning: Integrity + audit slice of the agent harness (not runtime — OpenSandbox owns that)*
+*Next action: build cli.py + dashboard/server.py*
+*Next milestone: `pip install agentshield && agentshield install` works in < 2 min*

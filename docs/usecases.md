@@ -1,6 +1,6 @@
 # AgentShield — Use Cases
 
-> Last updated: 2026-03-18
+> Last updated: 2026-04-10
 
 ---
 
@@ -184,15 +184,15 @@ and what controls are in place. No existing tool provides this.
 AgentShield addresses the following risks from the
 [OWASP Top 10 for Agentic Applications (2026)](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/):
 
-| # | OWASP Risk | AgentShield Response | Phase |
-|---|-----------|---------------------|-------|
-| 2 | Tool Misuse | Policy engine + PreToolUse blocking | **MVP** |
-| 5 | Insecure Output | PostToolUse credential scanning | **MVP** |
-| 8 | Infinite Loop | Circuit breaker + session monitor | **MVP** |
-| 9 | False Completion | Session replay timeline | **MVP** |
-| 1 | Goal Hijack | Prompt injection scanner | Layer 2 |
-| 4 | Delegated Authority | Agent chain audit | Layer 2 |
-| 7 | Multi-Agent Cascade | Session isolation + cross-agent audit | Layer 2 |
-| 3 | Identity Abuse | Agent identity + command allowlist | Layer 3 |
-| 6 | Memory Poisoning | Memory vault + isolated memory | Layer 3 |
-| 10 | Semantic Bypass | LLM-powered intent analysis | Layer 3 |
+| # | OWASP Risk | AgentShield Response | Status |
+|---|-----------|---------------------|--------|
+| 1 | Goal Hijack | Imperative-language detection in output scanner | **Shipped** (partial) |
+| 2 | Tool Misuse | Policy engine + PreToolUse blocking | **Shipped** |
+| 3 | Identity Abuse | Per-agent-role policies via agent_id/agent_type | **Shipped** (partial) |
+| 4 | Delegated Authority | Provenance ledger with source_event_id | **Shipped** (partial) |
+| 5 | Insecure Output | PostToolUse credential scanning (7 patterns) | **Shipped** |
+| 6 | Memory Poisoning | Memory guardian — write-protect MEMORY.md | **Shipped** |
+| 7 | Multi-Agent Cascade | Session isolation + cross-agent audit | Planned |
+| 8 | Infinite Loop | Sliding-window loop detection (30 calls/10s) | **Shipped** |
+| 9 | False Completion | Session replay timeline | Week 2 (needs dashboard) |
+| 10 | Semantic Bypass | LLM-powered intent analysis | Planned |

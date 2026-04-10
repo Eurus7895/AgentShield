@@ -1,14 +1,15 @@
 # AgentShield — Architecture
 
-> Last updated: 2026-03-18
+> Last updated: 2026-04-10
 
 ---
 
 ## Overview
 
-AgentShield uses a **Daemon + Adapter** pattern to intercept agent tool calls,
-enforce policy, and log an audit trail — all with minimal latency impact on the
-developer workflow.
+AgentShield is the **integrity and audit slice** of the agent harness — a slot-in
+component that owns allow/deny enforcement, provenance, memory protection, and
+role arbitration. It uses a **Daemon + Adapter** pattern to intercept agent tool
+calls, enforce policy, and log an audit trail — all with < 20ms latency.
 
 ```
 Agent (Claude Code, MCP client, SDK, OpenSandbox)
@@ -17,10 +18,10 @@ Agent (Claude Code, MCP client, SDK, OpenSandbox)
 ┌──────────────────────────────────────┐
 │         AgentShield Engine           │
 │                                      │
-│  Policy Engine   → allow / block     │
-│  Audit Logger    → what happened     │
-│  Output Scanner  → credential leak   │
-│  Session Monitor → loop detection    │
+│  Policy Engine   → allow / block     │  ✅ shipped
+│  Audit Logger    → what happened     │  ✅ shipped
+│  Output Scanner  → credential leak   │  ✅ shipped
+│  Session Monitor → loop detection    │  ✅ shipped
 └──────────────────────────────────────┘
 ```
 
@@ -75,9 +76,10 @@ feeling instant.
 
 Adapters translate framework-specific events into AgentShield's `ToolEvent` format.
 
-### Adapter 1 — Claude Code Hook (MVP)
+### Adapter 1 — Claude Code Hook (Shipped)
 
 Uses the official Claude Code Hooks API (`PreToolUse` + `PostToolUse`).
+Implemented in `adapters/claude_code/pre_tool.py` and `post_tool.py` (stdlib only).
 
 ```json
 {
@@ -99,6 +101,10 @@ Uses the official Claude Code Hooks API (`PreToolUse` + `PostToolUse`).
 - **exit 0** → allow
 - **exit 2** → block
 - **exit 1** → hook error
+
+**Installer** (`adapters/claude_code/installer.py`): Idempotent merge into
+`~/.claude/settings.json`, copies hook scripts to `~/.agentshield/`, writes
+default policy, registers daemon service.
 
 ### Adapter 2 — MCP Server (Post-MVP)
 
@@ -144,16 +150,18 @@ SQLite in WAL mode for concurrent reads during hook writes.
 
 ```sql
 CREATE TABLE IF NOT EXISTS tool_calls (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts          TEXT NOT NULL,
-    session_id  TEXT,
-    agent_id    TEXT,
-    framework   TEXT NOT NULL DEFAULT 'claude_code',
-    tool        TEXT NOT NULL,
-    input       TEXT,
-    blocked     INTEGER NOT NULL DEFAULT 0,
-    reason      TEXT,
-    duration_ms INTEGER
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts              TEXT NOT NULL,
+    session_id      TEXT,
+    agent_id        TEXT,
+    framework       TEXT NOT NULL DEFAULT 'claude_code',
+    tool            TEXT NOT NULL,
+    input           TEXT,
+    blocked         INTEGER NOT NULL DEFAULT 0,
+    reason          TEXT,
+    duration_ms     INTEGER,
+    source_event_id INTEGER,     -- provenance: which read led to this write
+    provenance_tags TEXT         -- JSON array of provenance labels
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -171,7 +179,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_dedup
 ```
 
 The `framework` column tracks which adapter generated each event — the foundation
-for cross-framework governance analytics.
+for cross-framework governance analytics. The `source_event_id` and `provenance_tags`
+columns are seeded for Month 2 provenance linking (read→write chains).
 
 ---
 
@@ -217,37 +226,35 @@ workspaces should default to fail-closed.
 
 ```
 agentshield/
-    __init__.py
+    __init__.py                              ✅
     daemon/
-        server.py               ← Unix socket daemon
-        startup.py              ← launchd/systemd registration
+        server.py               ← Unix socket daemon               ✅
+        startup.py              ← launchd/systemd registration     ✅
     engine/
-        core.py                 ← ToolEvent, EngineDecision, AgentShieldEngine
-        policy.py               ← YAML rule evaluation
-        logger.py               ← SQLite WAL logging
-        scanner.py              ← Credential/PII detection
-        monitor.py              ← Session monitor, loop detection
+        core.py                 ← ToolEvent, EngineDecision        ✅
+        policy.py               ← YAML rule evaluation             ✅
+        scanner.py              ← Credential/PII + imperative      ✅
+        monitor.py              ← Session monitor, loop detection  ✅
     adapters/
         claude_code/
-            pre_tool.py         ← PreToolUse hook (stdlib only)
-            post_tool.py        ← PostToolUse hook (stdlib only)
-            installer.py        ← Writes settings.json, starts daemon
+            pre_tool.py         ← PreToolUse hook (stdlib only)    ✅
+            post_tool.py        ← PostToolUse hook (stdlib only)   ✅
+            installer.py        ← settings.json merge + daemon     ✅
         mcp_server/             ← Post-MVP
         sdk/                    ← Post-MVP
         opensandbox/            ← Month 3+
     policy/
-        loader.py
-        defaults.py
+        defaults.py             ← 8 default rules                  ✅
     storage/
-        db.py
-        schema.sql
-    dashboard/
+        db.py                   ← SQLite WAL audit logger          ✅
+        schema.sql              ← tool_calls + sessions tables     ✅
+    dashboard/                  ← Week 2
         server.py
         templates/
             index.html
-    cli.py
+    cli.py                      ← Week 2
 
-~/.agentshield/
+~/.agentshield/                 (deployed at install time)
     pre_tool.py
     post_tool.py
     policy.yaml

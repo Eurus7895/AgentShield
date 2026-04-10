@@ -1,6 +1,6 @@
 # AgentShield — Tech Stack
 
-> Last updated: 2026-03-18
+> Last updated: 2026-04-10
 
 ---
 
@@ -15,18 +15,18 @@ while leaving a clean upgrade path for team and enterprise features.
 
 ## Stack Summary
 
-| Layer | Technology | Version | Why |
-|-------|-----------|---------|-----|
-| **Language** | Python | 3.10+ | Matches the AI/ML ecosystem; most agent frameworks are Python |
-| **Hook Scripts** | Python (stdlib only) | 3.10+ | No pip deps — fast spawn, no import overhead |
-| **IPC** | Unix domain socket | — | ~2-5ms latency; local, no network stack |
-| **Policy Format** | YAML (via PyYAML) | — | Human-readable, easy to edit, widely understood |
-| **Storage** | SQLite | WAL mode | Local, fast, concurrent reads, zero setup |
-| **CLI Framework** | Typer | — | Type-safe, auto-generated help, clean UX |
-| **Dashboard** | FastAPI + plain HTML | — | No React build step; serves from a single process |
-| **Daemon Mgmt** | launchd / systemd --user | — | Native OS process management; auto-restart |
-| **Packaging** | pyproject.toml | — | Modern Python packaging standard (PEP 621) |
-| **Testing** | pytest | — | Standard Python test runner |
+| Layer | Technology | Version | Status | Why |
+|-------|-----------|---------|--------|-----|
+| **Language** | Python | 3.10+ | Shipped | Matches the AI/ML ecosystem; most agent frameworks are Python |
+| **Hook Scripts** | Python (stdlib only) | 3.10+ | Shipped | No pip deps — fast spawn, no import overhead |
+| **IPC** | Unix domain socket | — | Shipped | ~2-5ms latency; local, no network stack |
+| **Policy Format** | YAML (via PyYAML) | — | Shipped | Human-readable, easy to edit, widely understood |
+| **Storage** | SQLite | WAL mode | Shipped | Local, fast, concurrent reads, zero setup |
+| **CLI Framework** | Typer | — | Week 2 | Type-safe, auto-generated help, clean UX |
+| **Dashboard** | FastAPI + plain HTML | — | Week 2 | No React build step; serves from a single process |
+| **Daemon Mgmt** | launchd / systemd --user | — | Shipped | Native OS process management; auto-restart |
+| **Packaging** | pyproject.toml | — | Shipped | Modern Python packaging standard (PEP 621) |
+| **Testing** | pytest | — | Shipped | Standard Python test runner; 131 tests passing |
 
 ---
 
@@ -145,14 +145,14 @@ pre_tool.py  ◀──[Decision JSON]──  agentshield.sock  ◀──  Daemon
 
 ## Performance Targets
 
-| Metric | Target | Measured by |
-|--------|--------|------------|
-| Hook → daemon → decision | < 20ms | `tests/test_daemon.py` |
-| Policy evaluation | < 1ms | `tests/test_policy.py` |
-| SQLite insert | < 5ms | `tests/test_engine.py` |
-| Dashboard page load | < 500ms | Manual testing |
-| `pip install agentshield` | < 30s | Clean machine test |
-| `agentshield install` | < 10s | Writes config + starts daemon |
+| Metric | Target | Status | Measured by |
+|--------|--------|--------|------------|
+| Hook → daemon → decision | < 20ms | Confirmed | `tests/test_daemon.py`, `bench_hook.py` |
+| Policy evaluation | < 1ms | Confirmed | `tests/test_policy.py` |
+| SQLite insert | < 5ms | Confirmed | `tests/test_storage.py` |
+| Dashboard page load | < 500ms | Week 2 | Manual testing |
+| `pip install agentshield` | < 30s | Week 2 | Clean machine test |
+| `agentshield install` | < 10s | Week 2 | Writes config + starts daemon |
 
 ---
 
